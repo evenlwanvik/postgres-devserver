@@ -5,7 +5,7 @@ Tool for migrating accounting data to local mssql container
 
 Create new virtual environment.
 ```bash
-python venv venv
+python -m venv venv
 ```
 
 Activate virutal environment.
