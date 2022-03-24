@@ -3,25 +3,45 @@ import pandas as pd
 import sqlalchemy
 import hashlib
 import math
+import logging
+import time
 
 # TODO: Replace hard-code variable
 start_date = datetime(2022, 3, 15)
 
 
 def mssql_db_conn(
-    username=None, password=None, host=None, db=None, port=None, driver="ODBC Driver 17 for SQL Server", trusted_connection=False 
+        username=None, 
+        password=None, 
+        host=None, 
+        db=None, 
+        port=None, 
+        driver="ODBC Driver 17 for SQL Server", 
+        trusted_connection=False 
     ) -> sqlalchemy.engine.base.Connection:
     """ 
-    Returns a connection to local mssql instance (username/password login)
+    Returns a connection to local mssql instance (username/password or mssql)
     """
+
     if trusted_connection:
         conn_url = f"mssql+pyodbc://@{host}/{db}?driver={driver}&truster_connection=yes"
     else:  
         conn_url = f"mssql+pyodbc://{username}:{password}@{host}:{port}/{db}?driver={driver}"
-  
-    print(f"connecting to {conn_url}")
 
     engine = sqlalchemy.create_engine(conn_url, fast_executemany=True)
+
+    return engine.connect()
+
+
+def pgsql_server_connection(
+    username, password, host, port, db
+    ) -> sqlalchemy.engine.base.Connection:
+    """
+    Returns a connection to a postgresql server (username/password password login)
+    """
+
+    conn_url = f"postgresql+psycopg2://{username}:{password}@{host}:{port}/{db}"
+    engine = sqlalchemy.create_engine(conn_url, executemany_mode="batch")
 
     return engine.connect()
 
@@ -39,35 +59,38 @@ def next_month(current_period):
 
 def migrate_delta():
 
-    initial_period = 201701
+    initial_period = "201701"
+    period = initial_period
 
     table = "agltransact"
 
-    local_db_conn = mssql_db_conn(
-                        username="sa",
-                        password="Valhalla06978!",
+    local_db_conn = pgsql_server_connection(
+                        username="admin",
+                        password="admin",
                         host="172.17.0.1",
                         port="7000",
-                        db="master",
-                        driver="ODBC+Driver+17+for+SQL+Server"
+                        db="DataPlatform01"
     )
 
-    #external_db_conn = mssql_db_conn(host="AGR-DB17.sfso.no", db="AgrHam_PK01", trusted_connection=True)
+    #sql = sqlalchemy.text(f'DROP TABLE IF EXISTS {table};')
+    #local_db_conn.execute(sql)
 
-    previous_period = pd.read_sql_query(
+    try:
+        previous_period = pd.read_sql_query(
         f"""
             SELECT
-                MAX(period)
+                MAX(period) as last_period
             FROM {table} 
         """, 
         con=local_db_conn
-    ).fetchall()[0][0]
+        )["last_period"][0]
 
-    if previous_period is None:
-        print(f"first migration, no data in local database, initializing period")
+        period = next_month(str(previous_period))
+
+    except sqlalchemy.exc.SQLAlchemyError:
+        print("table does not exist. setting initial period.")
         previous_period = initial_period
-
-    period = next_month(previous_period)
+        pass
 
     print(period)
 
